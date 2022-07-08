@@ -29,6 +29,26 @@ internal class Item : IEquatable<Item?>
 
     public int OriginalPrice => Price / Count;
 
+    public void IncreaseCount(int value)
+    {
+        if (value < 0)
+            throw new ArgumentOutOfRangeException(nameof(value));
+        int origin = OriginalPrice;
+        Count += value;
+        Price = Count * origin;
+    }
+    public void DecreaseCount(int value)
+    {
+        if (value < 0 || value > Count)
+            throw new ArgumentOutOfRangeException(nameof(value));
+        int origin = OriginalPrice;
+        Count -= value;
+        Price = Count * origin;
+    }
+    public Item Clone()
+    {
+        return new Item(Header, Count, Price, Mod, ID);
+    }
     public static Item? FromString(string value, string mod)
     {
         if (Regex.IsMatch(value, @"(.+)\s([0-9]+) шт. - ([0-9]+)$"))
@@ -65,4 +85,5 @@ internal class Item : IEquatable<Item?>
                Price == other.Price &&
                Mod == other.Mod;
     }
+
 }
