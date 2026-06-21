@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EconomyViewerWeb.Api/EconomyViewerWeb.Api.csproj" />
+    <Project Path="src/EconomyViewerWeb.Application/EconomyViewerWeb.Application.csproj" />
+    <Project Path="src/EconomyViewerWeb.Domain/EconomyViewerWeb.Domain.csproj" />
+    <Project Path="src/EconomyViewerWeb.Infrastructure/EconomyViewerWeb.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EconomyViewerWeb.Tests/EconomyViewerWeb.Tests.csproj" />
+  </Folder>
+</Solution>

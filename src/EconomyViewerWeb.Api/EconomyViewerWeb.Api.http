@@ -1,0 +1,9 @@
+@EconomyViewerWeb.Api_HostAddress = http://localhost:5232
+
+GET {{EconomyViewerWeb.Api_HostAddress}}/health
+
+###
+
+GET {{EconomyViewerWeb.Api_HostAddress}}/api/health
+
+###
