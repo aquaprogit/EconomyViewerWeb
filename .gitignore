@@ -433,3 +433,14 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+
+# Rider files
+.idea/
+*.sln.DotSettings.user
+# Finder
+.DS_Store
+
+#Folders
+bin/
+obj/
