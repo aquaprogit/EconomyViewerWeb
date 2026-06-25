@@ -437,3 +437,6 @@ FodyWeavers.xsd
 
 # Rider files
 .idea/
+*.sln.DotSettings.user
+# Finder
+.DS_Store
