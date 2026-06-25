@@ -1,5 +1,6 @@
 using EconomyViewerWeb.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using EconomyViewerWeb.Infrastructure.Configurations;
 
 namespace EconomyViewerWeb.Infrastructure.Persistence;
 
@@ -18,34 +19,8 @@ public class EconomyViewerDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Server>(entity =>
-        {
-            entity.HasKey(server => server.Id);
+        modelBuilder.ApplyConfiguration(new ServerEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new ItemEntityConfiguration());
 
-            entity.Property(server => server.Name)
-                .IsRequired()
-                .HasMaxLength(20);
-
-            entity.HasMany(server => server.Items)
-                .WithOne(item => item.Server)
-                .HasForeignKey(item => item.ServerId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-        });
-
-        modelBuilder.Entity<Item>(entity =>
-        {
-            entity.HasKey(item => item.Id);
-
-            entity.Property(item => item.Header)
-                .IsRequired()
-                .HasMaxLength(20);
-
-            entity.Property(item => item.Mod)
-                .HasMaxLength(20);
-
-            entity.Ignore(item => item.PriceForOne);
-
-        });
     }
 }
