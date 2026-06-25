@@ -9,7 +9,7 @@ public class Item : BaseEntity
 
     public decimal PriceForOne { get; set; }
 
-    public int ServerId { get; set; }
+    public Guid ServerId { get; set; }
 
     public Server Server { get; set; } = null!;
 
