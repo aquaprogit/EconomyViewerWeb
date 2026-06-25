@@ -1,17 +1,15 @@
 namespace EconomyViewerWeb.Domain.Entities;
-public class Item
+public class Item : BaseEntity
 {
-    public int Id { get; set; }
-
-    public string Header { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public int Count { get; set; }
     public int Price { get; set; }
 
     public string? Mod { get; set; }
 
-    public int PriceForOne => Count == 0 ? 0 : Price / Count;
+    public decimal PriceForOne { get; set; }
 
-    public int ServerId { get; set; }
+    public Guid ServerId { get; set; }
 
     public Server Server { get; set; } = null!;
 
