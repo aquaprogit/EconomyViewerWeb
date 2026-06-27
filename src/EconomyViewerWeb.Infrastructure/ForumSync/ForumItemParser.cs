@@ -6,11 +6,11 @@ namespace EconomyViewerWeb.Infrastructure.ForumSync;
 public static class ForumItemParser
 {
     private static readonly Regex FullItemRegex = new(
-        @"^(?<header>.+?)\s+(?<count>\d+)\s*шт\.\s*-\s*(?<price>\d+)$",
+        @"^(?<name>.+?)\s+(?<count>\d+)\s*шт\.\s*-\s*(?<price>\d+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex ShortItemRegex = new(
-        @"^(?<header>.+?)\s+(?<price>\d+)$",
+        @"^(?<name>.+?)\s+(?<price>\d+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static Item? TryParseItem(string line, string? currentMod)
@@ -26,7 +26,7 @@ public static class ForumItemParser
 
         if (fullMatch.Success)
         {
-            var header = fullMatch.Groups["header"].Value;
+            var name = fullMatch.Groups["name"].Value;
             if (!int.TryParse(fullMatch.Groups["count"].Value, out var count) ||
                 !int.TryParse(fullMatch.Groups["price"].Value, out var price))
             {
@@ -35,7 +35,7 @@ public static class ForumItemParser
 
             var item = new Item
             {
-                Header = header,
+                Name = name,
                 Count = count,
                 Price = price,
                 Mod = currentMod
@@ -49,7 +49,7 @@ public static class ForumItemParser
 
         if (shortMatch.Success)
         {
-            var header = shortMatch.Groups["header"].Value;
+            var name = shortMatch.Groups["name"].Value;
             if (!int.TryParse(shortMatch.Groups["price"].Value, out var price))
             {
                 return null;
@@ -57,7 +57,7 @@ public static class ForumItemParser
 
             var item = new Item
             {
-                Header = header,
+                Name = name,
                 Count = 1,
                 Price = price,
                 Mod = currentMod
@@ -70,25 +70,4 @@ public static class ForumItemParser
         return null;
     }
 
-    public static string? TryParseModHeader(string line)
-    {
-        line = line.Trim();
-
-        if (string.IsNullOrWhiteSpace(line))
-        {
-            return null;
-        }
-
-        if (line.EndsWith(':'))
-        {
-            return line.TrimEnd(':').Trim();
-        }
-
-        if (line.StartsWith('*') && line.EndsWith('*'))
-        {
-            return line.Trim('*').Trim();
-        }
-
-        return null;
-    }
 }

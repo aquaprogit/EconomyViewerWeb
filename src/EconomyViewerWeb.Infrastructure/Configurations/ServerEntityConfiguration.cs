@@ -14,7 +14,7 @@ namespace EconomyViewerWeb.Infrastructure.Configurations;
 
         builder.Property(server => server.Name)
             .IsRequired()
-            .HasMaxLength(20);
+            .HasMaxLength(150);
 
         builder.HasMany(server => server.Items)
             .WithOne(item => item.Server)
