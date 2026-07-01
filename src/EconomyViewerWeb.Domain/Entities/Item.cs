@@ -7,7 +7,7 @@ public class Item : BaseEntity
 
     public string? Mod { get; set; }
 
-    public decimal PriceForOne { get; set; }
+    public int PriceForOne { get; set; }
 
     public Guid ServerId { get; set; }
 

@@ -14,10 +14,10 @@ internal class ItemEntityConfiguration : IEntityTypeConfiguration<Item>
 
         builder.Property(item => item.Name)
             .IsRequired()
-            .HasMaxLength(20);
+            .HasMaxLength(150);
 
         builder.Property(item => item.Mod)
-            .HasMaxLength(20);
+            .HasMaxLength(150);
 
         builder.Property(item => item.PriceForOne)
             .HasComputedColumnSql("CASE WHEN [Count] = 0 THEN 0 ELSE [Price] / [Count] END");

@@ -1,5 +1,6 @@
 using EconomyViewerWeb.Application;
 using EconomyViewerWeb.Infrastructure;
+using EconomyViewerWeb.Infrastructure.ForumSync;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,5 +23,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+using (var scope = app.Services.CreateScope())
+{
+    var forumSyncService = scope.ServiceProvider.GetRequiredService<IForumSyncService>();
+    await forumSyncService.SeedIfEmptyAsync();
+}
 
 app.Run();

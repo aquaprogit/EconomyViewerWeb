@@ -1,3 +1,4 @@
+using EconomyViewerWeb.Infrastructure.ForumSync;
 using EconomyViewerWeb.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,13 @@ public static class DependencyInjection
         {
             options.UseSqlServer(connectionString);
         });
+
+        services.Configure<ForumSyncOptions>(
+            configuration.GetSection(ForumSyncOptions.SectionName));
+
+        services.AddHttpClient();
+
+        services.AddScoped<IForumSyncService, ForumSyncService>();
 
         return services;
     }
