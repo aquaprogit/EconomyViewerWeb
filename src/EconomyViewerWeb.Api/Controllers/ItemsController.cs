@@ -1,3 +1,4 @@
+using EconomyViewerWeb.Api.Contracts.Common;
 using EconomyViewerWeb.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using EconomyViewerWeb.Api.Contracts.Items;
@@ -17,11 +18,13 @@ public class ItemsController : ControllerBase
     }
 
     [HttpGet]
-    [ProducesResponseType(typeof(IReadOnlyCollection<ItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PagedResultDto<ItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyCollection<ItemDto>>> GetItems(
         [FromRoute] Guid serverId,
-        [FromQuery] string? mods)
+        [FromQuery] string? mods,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
     {
         var serverExists = await _dbContext.Servers
             .AnyAsync(server => server.Id == serverId);
@@ -43,8 +46,12 @@ public class ItemsController : ControllerBase
                 selectedMods.Contains(item.Mod));
         }
 
+        var totalCount = await query.CountAsync();
+
         var items = await query
             .OrderBy(item => item.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(item => new ItemDto(
                 item.Id,
                 item.Name,
@@ -54,7 +61,14 @@ public class ItemsController : ControllerBase
                 item.PriceForOne))
             .ToListAsync();
 
-        return Ok(items);
+        var result = new PagedResultDto<ItemDto>(
+            items,
+            page,
+            pageSize,
+            totalCount);
+
+
+        return Ok(result);
 
     }
 
