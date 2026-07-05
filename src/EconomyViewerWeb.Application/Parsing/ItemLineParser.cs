@@ -1,9 +1,8 @@
-using System.Text.RegularExpressions;
-using EconomyViewerWeb.Domain.Entities;
+﻿using System.Text.RegularExpressions;
 
-namespace EconomyViewerWeb.Infrastructure.ForumSync;
+namespace EconomyViewerWeb.Application.Parsing;
 
-public static class ForumItemParser
+public static class ItemLineParser
 {
     private static readonly Regex FullItemRegex = new(
         @"^(?<name>.+?)\s+(?<count>\d+)\s*шт\.\s*-\s*(?<price>\d+)$",
@@ -13,7 +12,7 @@ public static class ForumItemParser
         @"^(?<name>.+?)\s+(?<price>\d+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public static Item? TryParseItem(string line, string? currentMod)
+    public static ParsedItem? TryParse(string line)
     {
         line = line.Trim();
 
@@ -27,22 +26,14 @@ public static class ForumItemParser
         if (fullMatch.Success)
         {
             var name = fullMatch.Groups["name"].Value;
+
             if (!int.TryParse(fullMatch.Groups["count"].Value, out var count) ||
                 !int.TryParse(fullMatch.Groups["price"].Value, out var price))
             {
                 return null;
             }
 
-            var item = new Item
-            {
-                Name = name,
-                Count = count,
-                Price = price,
-                Mod = currentMod
-            };
-
-            return item;
-
+            return new ParsedItem(name, count, price);
         }
 
         var shortMatch = ShortItemRegex.Match(line);
@@ -50,24 +41,15 @@ public static class ForumItemParser
         if (shortMatch.Success)
         {
             var name = shortMatch.Groups["name"].Value;
+
             if (!int.TryParse(shortMatch.Groups["price"].Value, out var price))
             {
                 return null;
             }
 
-            var item = new Item
-            {
-                Name = name,
-                Count = 1,
-                Price = price,
-                Mod = currentMod
-            };
-
-            return item;
+            return new ParsedItem(name, 1, price);
         }
-
 
         return null;
     }
-
 }
