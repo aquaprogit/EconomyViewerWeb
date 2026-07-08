@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using EconomyViewerWeb.Infrastructure.Persistence;
-using EconomyViewerWeb.Api.Contracts.Servers;
-
+using EconomyViewerWeb.Application.Contracts.Servers;
+using EconomyViewerWeb.Application.Servers;
 
 
 namespace EconomyViewerWeb.Api.Controllers;
@@ -11,23 +9,18 @@ namespace EconomyViewerWeb.Api.Controllers;
 [Route("api/[controller]")]
 public class ServersController : ControllerBase
 {
-    private readonly EconomyViewerDbContext _dbContext;
+    private readonly IServerService _serverService;
 
-    public ServersController(EconomyViewerDbContext dbContext)
+    public ServersController(IServerService serverService)
     {
-        _dbContext = dbContext;
+        _serverService = serverService;
     }
 
     [HttpGet("minimal")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ServerMinimalDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<ServerMinimalDto>>> GetMinimalServers()
     {
-        var servers = await _dbContext.Servers
-            .OrderBy(server => server.Name)
-            .Select(server => new ServerMinimalDto(
-                server.Id,
-                server.Name))
-            .ToListAsync();
+        var servers = await _serverService.GetMinimalServersAsync();
 
         return Ok(servers);
     }
@@ -38,21 +31,12 @@ public class ServersController : ControllerBase
     public async Task<ActionResult<IReadOnlyCollection<string>>> GetServerMods(
         [FromRoute] Guid serverId)
     {
-        var serverExists = await _dbContext.Servers
-            .AnyAsync(server => server.Id == serverId);
+        var mods = await _serverService.GetServerModsAsync(serverId);
 
-        if (!serverExists)
+        if (mods is null)
         {
             return NotFound();
         }
-
-        var mods = await _dbContext.Items
-            .Where(item => item.ServerId == serverId)
-            .Select(item => item.Mod)
-            .Where(mod => !string.IsNullOrWhiteSpace(mod))
-            .Distinct()
-            .OrderBy(mod => mod)
-            .ToListAsync();
 
         return Ok(mods);
 

@@ -1,4 +1,4 @@
-﻿namespace EconomyViewerWeb.Api.Contracts.Items;
+﻿namespace EconomyViewerWeb.Application.Contracts.Items;
 
 public sealed record BulkCreateItemsResultDto(
     int CreatedCount,

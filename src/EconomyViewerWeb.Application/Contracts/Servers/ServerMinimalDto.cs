@@ -1,4 +1,4 @@
-namespace EconomyViewerWeb.Api.Contracts.Servers;
+namespace EconomyViewerWeb.Application.Contracts.Servers;
 
 public sealed record ServerMinimalDto(
     Guid Id,

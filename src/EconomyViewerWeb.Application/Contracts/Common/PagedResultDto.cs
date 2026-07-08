@@ -1,4 +1,4 @@
-﻿namespace EconomyViewerWeb.Api.Contracts.Common;
+﻿namespace EconomyViewerWeb.Application.Contracts.Common;
 
 public sealed record PagedResultDto<T>(
     IReadOnlyCollection<T> Items,

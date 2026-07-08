@@ -1,10 +1,8 @@
-using EconomyViewerWeb.Api.Contracts.Common;
-using EconomyViewerWeb.Infrastructure.Persistence;
+using EconomyViewerWeb.Application.Contracts.Common;
 using Microsoft.AspNetCore.Mvc;
-using EconomyViewerWeb.Api.Contracts.Items;
-using EconomyViewerWeb.Domain.Entities;
-using EconomyViewerWeb.Application.Parsing;
-using Microsoft.EntityFrameworkCore;
+using EconomyViewerWeb.Application.Contracts.Items;
+using EconomyViewerWeb.Application.Items;
+
 
 namespace EconomyViewerWeb.Api.Controllers;
 
@@ -12,11 +10,12 @@ namespace EconomyViewerWeb.Api.Controllers;
 [Route("api/servers/{serverId:guid}/[controller]")]
 public class ItemsController : ControllerBase
 {
-    private readonly EconomyViewerDbContext _dbContext;
 
-    public ItemsController(EconomyViewerDbContext dbContext)
+    private readonly IItemService _itemService;
+
+    public ItemsController(IItemService itemService)
     {
-        _dbContext = dbContext;
+        _itemService = itemService;
     }
 
     [HttpGet]
@@ -28,48 +27,16 @@ public class ItemsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
-        var serverExists = await _dbContext.Servers
-            .AnyAsync(server => server.Id == serverId);
+        var result = await _itemService.GetItemsAsync(
+            serverId,
+            mods,
+            page,
+            pageSize);
 
-        if (!serverExists)
+        if (result is null)
         {
             return NotFound();
         }
-
-        var selectedMods = mods?
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var query = _dbContext.Items
-            .Where(item => item.ServerId == serverId);
-
-        if (selectedMods is { Length: > 0 })
-        {
-            query = query.Where(item =>
-                item.Mod != null &&
-                selectedMods.Contains(item.Mod));
-        }
-
-        var totalCount = await query.CountAsync();
-
-        var items = await query
-            .OrderBy(item => item.Name)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(item => new ItemDto(
-                item.Id,
-                item.Name,
-                item.Count,
-                item.Price,
-                item.Mod,
-                item.PriceForOne))
-            .ToListAsync();
-
-        var result = new PagedResultDto<ItemDto>(
-            items,
-            page,
-            pageSize,
-            totalCount);
-
 
         return Ok(result);
 
@@ -82,16 +49,7 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromRoute] Guid id)
     {
-        var item = await _dbContext.Items
-            .Where(item => item.ServerId == serverId && item.Id == id)
-            .Select(item => new ItemDto(
-                item.Id,
-                item.Name,
-                item.Count,
-                item.Price,
-                item.Mod,
-                item.PriceForOne))
-            .FirstOrDefaultAsync();
+        var item = await _itemService.GetItemAsync(serverId, id);
 
         if (item is null)
         {
@@ -109,49 +67,22 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromBody] CreateItemRequest request)
     {
-        var serverExists = await _dbContext.Servers
-            .AnyAsync(server => server.Id == serverId);
+        var result = await _itemService.CreateItemAsync(serverId, request);
 
-        if (!serverExists)
+        if (result.Status == CreateItemStatus.ServerNotFound)
         {
             return NotFound();
         }
 
-        var validationError = ValidateItemInput(
-            request.Name,
-            request.Count,
-            request.Price,
-            request.Mod);
-
-        if (validationError is not null)
+        if (result.Status == CreateItemStatus.ValidationError)
         {
-            return BadRequest(validationError);
+            return BadRequest(result.ErrorMessage);
         }
-
-        var item = new Item
-        {
-            ServerId = serverId,
-            Name = request.Name,
-            Count = request.Count,
-            Price = request.Price,
-            Mod = request.Mod
-        };
-
-        _dbContext.Items.Add(item);
-        await _dbContext.SaveChangesAsync();
-
-        var itemDto = new ItemDto(
-            item.Id,
-            item.Name,
-            item.Count,
-            item.Price,
-            item.Mod,
-            item.PriceForOne);
 
         return CreatedAtAction(
             nameof(GetItem),
-            new { serverId, id = item.Id },
-            itemDto);
+            new { serverId, id = result.Item!.Id },
+            result.Item);
     }
 
     [HttpPut("{id:guid}")]
@@ -163,41 +94,22 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid id,
         [FromBody] UpdateItemRequest request)
     {
-        var item = await _dbContext.Items
-            .FirstOrDefaultAsync(item =>
-                item.ServerId == serverId &&
-                item.Id == id);
+        var result = await _itemService.UpdateItemAsync(
+            serverId,
+            id,
+            request);
 
-        if (item is null)
+        if (result.Status == UpdateItemStatus.ItemNotFound)
         {
             return NotFound();
         }
 
-        var validationError = ValidateItemInput(
-            request.Name,
-            request.Count,
-            request.Price,
-            request.Mod);
-
-        if (validationError is not null)
+        if (result.Status == UpdateItemStatus.ValidationError)
         {
-            return BadRequest(validationError);
+            return BadRequest(result.ErrorMessage);
         }
 
-        item.Name = request.Name;
-        item.Count = request.Count;
-        item.Price = request.Price;
-        item.Mod = request.Mod;
-
-        await _dbContext.SaveChangesAsync();
-
-        return Ok(new ItemDto(
-            item.Id,
-            item.Name,
-            item.Count,
-            item.Price,
-            item.Mod,
-            item.PriceForOne));
+        return Ok(result.Item);
     }
 
     [HttpDelete("{id:guid}")]
@@ -207,19 +119,12 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromRoute] Guid id)
     {
-        var item = await _dbContext.Items
-            .FirstOrDefaultAsync(item =>
-                item.ServerId == serverId &&
-                item.Id == id);
+        var status = await _itemService.DeleteItemAsync(serverId, id);
 
-        if (item is null)
+        if (status == DeleteItemStatus.ItemNotFound)
         {
             return NotFound();
         }
-
-        _dbContext.Items.Remove(item);
-
-        await _dbContext.SaveChangesAsync();
 
         return NoContent();
     }
@@ -232,101 +137,19 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromBody] BulkCreateItemsRequest request)
     {
-        var serverExists = await _dbContext.Servers
-            .AnyAsync(server => server.Id == serverId);
+        var result = await _itemService.BulkCreateItemsAsync(serverId, request);
 
-        if (!serverExists)
+        if (result.Status == BulkCreateItemsStatus.ServerNotFound)
         {
             return NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(request.Mod))
+        if (result.Status == BulkCreateItemsStatus.ValidationError)
         {
-            return BadRequest("Mod is required.");
+            return BadRequest(result.ErrorMessage);
         }
 
-        if (string.IsNullOrWhiteSpace(request.Lines))
-        {
-            return BadRequest("Lines are required.");
-        }
-
-        var existingMods = await _dbContext.Items
-            .Where(item => item.ServerId == serverId)
-            .Select(item => item.Mod)
-            .Where(mod => !string.IsNullOrWhiteSpace(mod))
-            .Distinct()
-            .ToListAsync();
-
-        if (!request.AllowNewMod && !existingMods.Contains(request.Mod))
-        {
-            return BadRequest($"Mod '{request.Mod}' does not exist for this server.");
-        }
-
-        var lines = request.Lines.Split(
-            '\n',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var items = new List<Item>();
-        var errors = new List<string>();
-
-        for (var index = 0; index < lines.Length; index++)
-        {
-            var line = lines[index];
-            var lineNumber = index + 1;
-
-            var parsedItem = ItemLineParser.TryParse(line);
-
-            if (parsedItem is null)
-            {
-                errors.Add($"Line {lineNumber}: '{line}' has invalid format.");
-                continue;
-            }
-
-            items.Add(new Item
-            {
-                ServerId = serverId,
-                Name = parsedItem.Name,
-                Count = parsedItem.Count,
-                Price = parsedItem.Price,
-                Mod = request.Mod
-            });
-        }
-
-        if (items.Count > 0)
-        {
-            _dbContext.Items.AddRange(items);
-            await _dbContext.SaveChangesAsync();
-        }
-
-        return Ok(new BulkCreateItemsResultDto(
-            items.Count,
-            errors.Count,
-            errors));
+        return Ok(result.Result);
     }
 
-
-    private static string? ValidateItemInput(string name, int count, int price, string mod)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return "Name is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(mod))
-        {
-            return "Mod is required.";
-        }
-
-        if (count <= 0)
-        {
-            return "Count must be greater than zero.";
-        }
-
-        if (price <= 0)
-        {
-            return "Price must be greater than zero.";
-        }
-
-        return null;
-    }
 }
