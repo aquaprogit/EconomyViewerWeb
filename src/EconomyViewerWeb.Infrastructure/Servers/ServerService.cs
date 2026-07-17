@@ -1,4 +1,5 @@
 using EconomyViewerWeb.Application.Contracts.Servers;
+using EconomyViewerWeb.Application.Exceptions;
 using EconomyViewerWeb.Application.Servers;
 using EconomyViewerWeb.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -24,14 +25,15 @@ public class ServerService : IServerService
             .ToListAsync();
     }
 
-    public async Task<IReadOnlyCollection<string>?> GetServerModsAsync(Guid serverId)
+    public async Task<IReadOnlyCollection<string>> GetServerModsAsync(Guid serverId)
     {
         var serverExists = await _dbContext.Servers
             .AnyAsync(server => server.Id == serverId);
 
         if (!serverExists)
         {
-            return null;
+            throw new NotFoundException(
+                $"Server with id '{serverId}' was not found.");
         }
 
         return await _dbContext.Items

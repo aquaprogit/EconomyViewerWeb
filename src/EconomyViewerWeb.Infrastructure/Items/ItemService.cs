@@ -1,7 +1,10 @@
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
 using EconomyViewerWeb.Application.Items;
 using EconomyViewerWeb.Infrastructure.Persistence;
 using EconomyViewerWeb.Application.Contracts.Common;
 using EconomyViewerWeb.Application.Contracts.Items;
+using EconomyViewerWeb.Application.Exceptions;
 using EconomyViewerWeb.Application.Parsing;
 using EconomyViewerWeb.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -11,13 +14,17 @@ namespace EconomyViewerWeb.Infrastructure.Items;
 public class ItemService : IItemService
 {
     private readonly EconomyViewerDbContext _dbContext;
+    private readonly IMapper _mapper;
 
-    public ItemService(EconomyViewerDbContext dbContext)
+    public ItemService(
+        EconomyViewerDbContext dbContext,
+        IMapper mapper)
     {
         _dbContext = dbContext;
+        _mapper = mapper;
     }
 
-    public async Task<PagedResultDto<ItemDto>?> GetItemsAsync(
+    public async Task<PagedResultDto<ItemDto>> GetItemsAsync(
         Guid serverId,
         string? mods,
         int page,
@@ -28,7 +35,8 @@ public class ItemService : IItemService
 
         if (!serverExists)
         {
-            return null;
+            throw new NotFoundException(
+                $"Server with id '{serverId}' was not found.");
         }
 
         var selectedMods = mods?
@@ -50,13 +58,7 @@ public class ItemService : IItemService
             .OrderBy(item => item.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(item => new ItemDto(
-                item.Id,
-                item.Name,
-                item.Count,
-                item.Price,
-                item.Mod,
-                item.PriceForOne))
+            .ProjectTo<ItemDto>(_mapper.ConfigurationProvider)
             .ToListAsync();
 
         return new PagedResultDto<ItemDto>(
@@ -66,21 +68,23 @@ public class ItemService : IItemService
             totalCount);
     }
 
-    public async Task<ItemDto?> GetItemAsync(Guid serverId, Guid id)
+    public async Task<ItemDto> GetItemAsync(Guid serverId, Guid id)
     {
-        return await _dbContext.Items
+        var itemDto = await _dbContext.Items
             .Where(item => item.ServerId == serverId && item.Id == id)
-            .Select(item => new ItemDto(
-                item.Id,
-                item.Name,
-                item.Count,
-                item.Price,
-                item.Mod,
-                item.PriceForOne))
+            .ProjectTo<ItemDto>(_mapper.ConfigurationProvider)
             .FirstOrDefaultAsync();
+
+        if (itemDto is null)
+        {
+            throw new NotFoundException(
+                $"Item with id '{id}' was not found on server '{serverId}'.");
+        }
+
+        return itemDto;
     }
 
-    public async Task<CreateItemResult> CreateItemAsync(
+    public async Task<ItemDto> CreateItemAsync(
         Guid serverId,
         CreateItemRequest request)
     {
@@ -89,53 +93,26 @@ public class ItemService : IItemService
 
         if (!serverExists)
         {
-            return new CreateItemResult(
-                CreateItemStatus.ServerNotFound,
-                null,
-                null);
-        }
-
-        var validationError = ValidateItemInput(
-            request.Name,
-            request.Count,
-            request.Price,
-            request.Mod);
-
-        if (validationError is not null)
-        {
-            return new CreateItemResult(
-                CreateItemStatus.ValidationError,
-                null,
-                validationError);
+            throw new NotFoundException(
+                $"Server with id '{serverId}' was not found.");
         }
 
         var item = new Item
         {
             ServerId = serverId,
-            Name = request.Name,
+            Name = request.Name.Trim(),
             Count = request.Count,
             Price = request.Price,
-            Mod = request.Mod
+            Mod = request.Mod.Trim()
         };
 
         _dbContext.Items.Add(item);
         await _dbContext.SaveChangesAsync();
 
-        var itemDto = new ItemDto(
-            item.Id,
-            item.Name,
-            item.Count,
-            item.Price,
-            item.Mod,
-            item.PriceForOne);
-
-        return new CreateItemResult(
-            CreateItemStatus.Success,
-            itemDto,
-            null);
+        return _mapper.Map<ItemDto>(item);
     }
 
-    public async Task<UpdateItemResult> UpdateItemAsync(
+    public async Task<ItemDto> UpdateItemAsync(
         Guid serverId,
         Guid id,
         UpdateItemRequest request)
@@ -147,48 +124,21 @@ public class ItemService : IItemService
 
         if (item is null)
         {
-            return new UpdateItemResult(
-                UpdateItemStatus.ItemNotFound,
-                null,
-                null);
+            throw new NotFoundException(
+                $"Item with id '{id}' was not found on server '{serverId}'.");
         }
 
-        var validationError = ValidateItemInput(
-            request.Name,
-            request.Count,
-            request.Price,
-            request.Mod);
-
-        if (validationError is not null)
-        {
-            return new UpdateItemResult(
-                UpdateItemStatus.ValidationError,
-                null,
-                validationError);
-        }
-
-        item.Name = request.Name;
+        item.Name = request.Name.Trim();
         item.Count = request.Count;
         item.Price = request.Price;
-        item.Mod = request.Mod;
+        item.Mod = request.Mod.Trim();
 
         await _dbContext.SaveChangesAsync();
 
-        var itemDto = new ItemDto(
-            item.Id,
-            item.Name,
-            item.Count,
-            item.Price,
-            item.Mod,
-            item.PriceForOne);
-
-        return new UpdateItemResult(
-            UpdateItemStatus.Success,
-            itemDto,
-            null);
+        return _mapper.Map<ItemDto>(item);
     }
 
-    public async Task<DeleteItemStatus> DeleteItemAsync(Guid serverId, Guid id)
+    public async Task DeleteItemAsync(Guid serverId, Guid id)
     {
         var item = await _dbContext.Items
             .FirstOrDefaultAsync(item =>
@@ -197,17 +147,16 @@ public class ItemService : IItemService
 
         if (item is null)
         {
-            return DeleteItemStatus.ItemNotFound;
+            throw new NotFoundException(
+                $"Item with id '{id}' was not found on server '{serverId}'.");
         }
 
         _dbContext.Items.Remove(item);
 
         await _dbContext.SaveChangesAsync();
-
-        return DeleteItemStatus.Success;
     }
 
-    public async Task<BulkCreateItemsResult> BulkCreateItemsAsync(
+    public async Task<BulkCreateItemsResultDto> BulkCreateItemsAsync(
     Guid serverId,
     BulkCreateItemsRequest request)
     {
@@ -216,41 +165,24 @@ public class ItemService : IItemService
 
         if (!serverExists)
         {
-            return new BulkCreateItemsResult(
-                BulkCreateItemsStatus.ServerNotFound,
-                null,
-                null);
+            throw new NotFoundException(
+                $"Server with id '{serverId}' was not found.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Mod))
-        {
-            return new BulkCreateItemsResult(
-                BulkCreateItemsStatus.ValidationError,
-                null,
-                "Mod is required.");
-        }
+        var normalizedMod = request.Mod.Trim();
 
-        if (string.IsNullOrWhiteSpace(request.Lines))
-        {
-            return new BulkCreateItemsResult(
-                BulkCreateItemsStatus.ValidationError,
-                null,
-                "Lines are required.");
-        }
+        var modExists = await _dbContext.Items
+            .AnyAsync(item =>
+                item.ServerId == serverId &&
+                item.Mod != null &&
+                EF.Functions.Collate(
+                    item.Mod,
+                    "Latin1_General_100_CI_AS") == normalizedMod);
 
-        var existingMods = await _dbContext.Items
-        .Where(item => item.ServerId == serverId)
-        .Select(item => item.Mod)
-        .Where(mod => !string.IsNullOrWhiteSpace(mod))
-        .Distinct()
-        .ToListAsync();
-
-        if (!request.AllowNewMod && !existingMods.Contains(request.Mod))
+        if (!request.AllowNewMod && !modExists)
         {
-            return new BulkCreateItemsResult(
-                BulkCreateItemsStatus.ValidationError,
-                null,
-                $"Mod '{request.Mod}' does not exist for this server.");
+            throw new ValidationException(
+                $"Mod '{normalizedMod}' does not exist for this server.");
         }
 
         var lines = request.Lines.Split(
@@ -279,7 +211,7 @@ public class ItemService : IItemService
                 Name = parsedItem.Name,
                 Count = parsedItem.Count,
                 Price = parsedItem.Price,
-                Mod = request.Mod
+                Mod = normalizedMod
             });
         }
 
@@ -294,34 +226,7 @@ public class ItemService : IItemService
         errors.Count,
         errors);
 
-        return new BulkCreateItemsResult(
-        BulkCreateItemsStatus.Success,
-        resultDto,
-        null);
+        return resultDto;
     }
 
-    private static string? ValidateItemInput(string name, int count, int price, string mod)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return "Name is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(mod))
-        {
-            return "Mod is required.";
-        }
-
-        if (count <= 0)
-        {
-            return "Count must be greater than zero.";
-        }
-
-        if (price <= 0)
-        {
-            return "Price must be greater than zero.";
-        }
-
-        return null;
-    }
 }

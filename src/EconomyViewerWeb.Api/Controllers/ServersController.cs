@@ -33,11 +33,6 @@ public class ServersController : ControllerBase
     {
         var mods = await _serverService.GetServerModsAsync(serverId);
 
-        if (mods is null)
-        {
-            return NotFound();
-        }
-
         return Ok(mods);
 
     }

@@ -5,26 +5,26 @@ namespace EconomyViewerWeb.Application.Items;
 
 public interface IItemService
 {
-    Task<PagedResultDto<ItemDto>?> GetItemsAsync(
+    Task<PagedResultDto<ItemDto>> GetItemsAsync(
         Guid serverId,
         string? mods,
         int page,
         int pageSize);
 
-    Task<ItemDto?> GetItemAsync(Guid serverId, Guid id);
+    Task<ItemDto> GetItemAsync(Guid serverId, Guid id);
 
-    Task<CreateItemResult> CreateItemAsync(
+    Task<ItemDto> CreateItemAsync(
         Guid serverId,
         CreateItemRequest request);
 
-    Task<UpdateItemResult> UpdateItemAsync(
+    Task<ItemDto> UpdateItemAsync(
         Guid serverId,
         Guid id,
         UpdateItemRequest request);
 
-    Task<DeleteItemStatus> DeleteItemAsync(Guid serverId, Guid id);
+    Task DeleteItemAsync(Guid serverId, Guid id);
 
-    Task<BulkCreateItemsResult> BulkCreateItemsAsync(
+    Task<BulkCreateItemsResultDto> BulkCreateItemsAsync(
         Guid serverId,
         BulkCreateItemsRequest request);
 }

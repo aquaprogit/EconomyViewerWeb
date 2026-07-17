@@ -33,11 +33,6 @@ public class ItemsController : ControllerBase
             page,
             pageSize);
 
-        if (result is null)
-        {
-            return NotFound();
-        }
-
         return Ok(result);
 
     }
@@ -51,11 +46,6 @@ public class ItemsController : ControllerBase
     {
         var item = await _itemService.GetItemAsync(serverId, id);
 
-        if (item is null)
-        {
-            return NotFound();
-        }
-
         return Ok(item);
     }
 
@@ -67,22 +57,12 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromBody] CreateItemRequest request)
     {
-        var result = await _itemService.CreateItemAsync(serverId, request);
-
-        if (result.Status == CreateItemStatus.ServerNotFound)
-        {
-            return NotFound();
-        }
-
-        if (result.Status == CreateItemStatus.ValidationError)
-        {
-            return BadRequest(result.ErrorMessage);
-        }
+        var item = await _itemService.CreateItemAsync(serverId, request);
 
         return CreatedAtAction(
             nameof(GetItem),
-            new { serverId, id = result.Item!.Id },
-            result.Item);
+            new { serverId, id = item.Id },
+            item);
     }
 
     [HttpPut("{id:guid}")]
@@ -94,22 +74,12 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid id,
         [FromBody] UpdateItemRequest request)
     {
-        var result = await _itemService.UpdateItemAsync(
+        var item = await _itemService.UpdateItemAsync(
             serverId,
             id,
             request);
 
-        if (result.Status == UpdateItemStatus.ItemNotFound)
-        {
-            return NotFound();
-        }
-
-        if (result.Status == UpdateItemStatus.ValidationError)
-        {
-            return BadRequest(result.ErrorMessage);
-        }
-
-        return Ok(result.Item);
+        return Ok(item);
     }
 
     [HttpDelete("{id:guid}")]
@@ -119,12 +89,7 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromRoute] Guid id)
     {
-        var status = await _itemService.DeleteItemAsync(serverId, id);
-
-        if (status == DeleteItemStatus.ItemNotFound)
-        {
-            return NotFound();
-        }
+        await _itemService.DeleteItemAsync(serverId, id);
 
         return NoContent();
     }
@@ -137,19 +102,11 @@ public class ItemsController : ControllerBase
         [FromRoute] Guid serverId,
         [FromBody] BulkCreateItemsRequest request)
     {
-        var result = await _itemService.BulkCreateItemsAsync(serverId, request);
+        var result = await _itemService.BulkCreateItemsAsync(
+            serverId,
+            request);
 
-        if (result.Status == BulkCreateItemsStatus.ServerNotFound)
-        {
-            return NotFound();
-        }
-
-        if (result.Status == BulkCreateItemsStatus.ValidationError)
-        {
-            return BadRequest(result.ErrorMessage);
-        }
-
-        return Ok(result.Result);
+        return Ok(result);
     }
 
 }
