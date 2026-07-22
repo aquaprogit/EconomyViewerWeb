@@ -1,5 +1,6 @@
 using EconomyViewerWeb.Infrastructure.Persistence;
 using EconomyViewerWeb.Domain.Entities;
+using EconomyViewerWeb.Application.Parsing;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -211,11 +212,16 @@ public class ForumSyncService : IForumSyncService
 
             foreach (var line in lines)
             {
-                var item = ForumItemParser.TryParseItem(line, currentMod);
-
-                if (item is not null)
+                var parsedItem = ItemLineParser.TryParse(line);
+                if (parsedItem is not null)
                 {
-                    server.Items.Add(item);
+                    server.Items.Add(new Item
+                    {
+                        Name = parsedItem.Name,
+                        Count = parsedItem.Count,
+                        Price = parsedItem.Price,
+                        Mod = currentMod
+                    });
                 }
             }
         }

@@ -1,5 +1,9 @@
+using EconomyViewerWeb.Application.Items;
+using EconomyViewerWeb.Application.Servers;
 using EconomyViewerWeb.Infrastructure.ForumSync;
+using EconomyViewerWeb.Infrastructure.Items;
 using EconomyViewerWeb.Infrastructure.Persistence;
+using EconomyViewerWeb.Infrastructure.Servers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +29,8 @@ public static class DependencyInjection
         services.AddHttpClient();
 
         services.AddScoped<IForumSyncService, ForumSyncService>();
+        services.AddScoped<IItemService, ItemService>();
+        services.AddScoped<IServerService, ServerService>();
 
         return services;
     }
