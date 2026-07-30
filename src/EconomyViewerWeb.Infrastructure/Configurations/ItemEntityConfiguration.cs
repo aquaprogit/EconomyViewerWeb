@@ -17,6 +17,7 @@ internal class ItemEntityConfiguration : IEntityTypeConfiguration<Item>
             .HasMaxLength(150);
 
         builder.Property(item => item.Mod)
+            .IsRequired()
             .HasMaxLength(150);
 
         builder.Property(item => item.PriceForOne)
