@@ -9,6 +9,7 @@ using EconomyViewerWeb.Application.Parsing;
 using EconomyViewerWeb.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using EconomyViewerWeb.Application.Common.Normalization;
+using EconomyViewerWeb.Domain.Enums;
 
 namespace EconomyViewerWeb.Infrastructure.Items;
 
@@ -111,7 +112,8 @@ public class ItemService : IItemService
             Name = normalizedName,
             Count = request.Count,
             Price = request.Price,
-            Mod = normalizedMod
+            Mod = normalizedMod,
+            Source = ItemSource.Manual
         };
 
         _dbContext.Items.Add(item);
@@ -134,6 +136,12 @@ public class ItemService : IItemService
         {
             throw new NotFoundException(
                 $"Item with id '{id}' was not found on server '{serverId}'.");
+        }
+
+        if (item.Source != ItemSource.Manual)
+        {
+            throw new ValidationException(
+                "Only manually created items can be updated.");
         }
 
         var normalizedName = ItemTextNormalizer.NormalizeRequired(
@@ -165,6 +173,12 @@ public class ItemService : IItemService
         {
             throw new NotFoundException(
                 $"Item with id '{id}' was not found on server '{serverId}'.");
+        }
+
+        if (item.Source != ItemSource.Manual)
+        {
+            throw new ValidationException(
+                "Only manually created items can be deleted.");
         }
 
         _dbContext.Items.Remove(item);
@@ -232,7 +246,8 @@ public class ItemService : IItemService
                 Name = normalizedName,
                 Count = parsedItem.Count,
                 Price = parsedItem.Price,
-                Mod = normalizedMod
+                Mod = normalizedMod,
+                Source = ItemSource.Manual
             });
         }
 

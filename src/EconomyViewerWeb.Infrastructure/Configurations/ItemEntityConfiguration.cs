@@ -23,5 +23,8 @@ internal class ItemEntityConfiguration : IEntityTypeConfiguration<Item>
         builder.Property(item => item.PriceForOne)
             .HasComputedColumnSql("CASE WHEN [Count] = 0 THEN 0 ELSE [Price] / [Count] END");
 
+        builder.Property(item => item.Source)
+            .IsRequired();
+
     }
 }

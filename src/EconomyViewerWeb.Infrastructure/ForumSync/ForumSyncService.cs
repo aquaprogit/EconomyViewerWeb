@@ -1,68 +1,50 @@
 using EconomyViewerWeb.Infrastructure.Persistence;
 using EconomyViewerWeb.Domain.Entities;
-using EconomyViewerWeb.Application.Parsing;
-using HtmlAgilityPack;
+using EconomyViewerWeb.Domain.Enums;
+using EconomyViewerWeb.Application.ForumSync;
+using EconomyViewerWeb.Application.ForumSync.Models;
+using EconomyViewerWeb.Application.Common.Keys;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 
 namespace EconomyViewerWeb.Infrastructure.ForumSync;
 
-public class ForumSyncService : IForumSyncService
+public sealed class ForumSyncService : IForumSyncService
 {
-    private readonly HttpClient _httpClient;
+    private readonly IForumClient _forumClient;
+    private readonly IForumParser _forumParser;
     private readonly EconomyViewerDbContext _dbContext;
-    private readonly ForumSyncOptions _options;
     private readonly ILogger<ForumSyncService> _logger;
 
     public ForumSyncService(
-        HttpClient httpClient,
+        IForumClient forumClient,
+        IForumParser forumParser,
         EconomyViewerDbContext dbContext,
-        IOptions<ForumSyncOptions> options,
         ILogger<ForumSyncService> logger)
     {
-        _httpClient = httpClient;
+        _forumClient = forumClient;
+        _forumParser = forumParser;
         _dbContext = dbContext;
-        _options = options.Value;
         _logger = logger;
     }
 
-    public async Task SeedIfEmptyAsync()
+    public async Task SyncAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Forum seed started");
+        _logger.LogInformation("Forum synchronization started");
 
-        var forumHtml = await DownloadForumPageAsync();
+        var forumHtml = await _forumClient.DownloadMainPageAsync(cancellationToken);
 
         _logger.LogDebug("Downloaded forum page. Length: {Length}", forumHtml.Length);
 
-        var serverLinks = DiscoverServerLinks(forumHtml);
+        var serverLinks = _forumParser.ParseServerReferences(forumHtml);
 
         _logger.LogInformation("Discovered {Count} economy server links", serverLinks.Count);
 
-        var existingServerNames = await _dbContext.Servers
-            .Select(server => server.Name)
-            .ToListAsync();
-
-        var missingServerLinks = serverLinks
-            .Where(link =>
-            {
-                var serverName = NormalizeServerName(link.Name);
-
-                return !existingServerNames.Contains(serverName);
-            })
-            .ToList();
-
-        if (missingServerLinks.Count == 0)
-        {
-            _logger.LogInformation("All forum servers already exist in database. Forum seed skipped");
-            return;
-        }
-
-        var downloadTasks = missingServerLinks.Select(async serverLink =>
+        var downloadTasks = serverLinks.Select(async serverLink =>
         {
             try
             {
-                var serverHtml = await DownloadServerPageAsync(serverLink);
+                var serverHtml = await _forumClient.DownloadServerPageAsync(serverLink, cancellationToken);
 
                 return new
                 {
@@ -70,6 +52,11 @@ public class ForumSyncService : IForumSyncService
                     Html = serverHtml
                 };
 
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -84,169 +71,183 @@ public class ForumSyncService : IForumSyncService
         });
 
         var serverPages = await Task.WhenAll(downloadTasks);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var successfulPages = serverPages
             .Where(page => page is not null)
             .ToList();
+
         _logger.LogInformation(
             "Successfully downloaded {SuccessCount} of {TotalCount} server pages",
             successfulPages.Count,
-            missingServerLinks.Count);
+            serverLinks.Count);
 
-        var servers = successfulPages
-            .Select(page => ParseServerPage(page!.ServerLink, page.Html))
-            .Where(server => server.Items.Any())
+        var parsedServers = successfulPages
+            .Select(page => _forumParser.ParseServer(
+                page!.ServerLink,
+                page.Html))
+            .Where(server => server.Items.Count > 0)
             .ToList();
 
-        _logger.LogInformation(
-            "Parsed {ServerCount} servers with {ItemsCount} total items",
-            servers.Count,
-            servers.Sum(server => server.Items.Count));
+        var existingServers = await _dbContext.Servers
+            .Include(server => server.Items)
+            .ToListAsync(cancellationToken);
 
-        await _dbContext.Servers.AddRangeAsync(servers);
-        await _dbContext.SaveChangesAsync();
+        var existingServersByName = existingServers.ToDictionary(
+            server => server.Name,
+            StringComparer.OrdinalIgnoreCase);
 
-        _logger.LogInformation(
-            "Forum seed completed. Saved {ServerCount} servers",
-            servers.Count);
+        var addedServersCount = 0;
+        var addedItemsCount = 0;
+        var updatedItemsCount = 0;
 
-
-    }
-
-    private async Task<string> DownloadForumPageAsync()
-    {
-        _logger.LogInformation("Downloading economy forum page from {Url}", _options.EconomyForumUrl);
-
-        return await _httpClient.GetStringAsync(_options.EconomyForumUrl);
-    }
-
-    private IReadOnlyCollection<ForumServerLink> DiscoverServerLinks(string html)
-    {
-        var document = new HtmlDocument();
-
-        document.LoadHtml(html);
-
-        var linkNodes = document.DocumentNode.SelectNodes("//a");
-
-        _logger.LogInformation(
-            "Found {Count} links on forum page",
-            linkNodes?.Count ?? 0);
-
-        var serverLinks = new List<ForumServerLink>();
-
-        if (linkNodes is null)
+        foreach (var parsedServer in parsedServers)
         {
-            return serverLinks;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!existingServersByName.TryGetValue(
+                    parsedServer.Name,
+                    out var existingServer))
+            {
+                existingServer = CreateServerEntity(parsedServer);
+
+                await _dbContext.Servers.AddAsync(existingServer, cancellationToken);
+
+                existingServersByName.Add(
+                    existingServer.Name,
+                    existingServer);
+
+                addedServersCount++;
+                addedItemsCount += existingServer.Items.Count;
+
+                continue;
+            }
+
+            var result = SynchronizeServerItems(
+                existingServer,
+                parsedServer);
+
+            addedItemsCount += result.AddedItems;
+            updatedItemsCount += result.UpdatedItems;
         }
 
-        foreach(var linkNode in linkNodes)
-        {
-            var title = linkNode.InnerText.Trim();
-            if (!title.StartsWith("Экономика ", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
-            var href = linkNode.GetAttributeValue("href", string.Empty);
-            if (string.IsNullOrWhiteSpace(href))
-            {
-                continue;
-            }
+        _logger.LogInformation(
+            "Forum synchronization completed. Added {AddedServersCount} servers, " +
+            "added {AddedItemsCount} items and updated {UpdatedItemsCount} items",
+            addedServersCount,
+            addedItemsCount,
+            updatedItemsCount);
 
-            if (!href.Contains("/topic/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
 
-            serverLinks.Add(new ForumServerLink(title, href));
-
-        }
-
-        return serverLinks;
     }
 
-    private async Task<string> DownloadServerPageAsync(ForumServerLink serverLink)
+    private static Server CreateServerEntity(
+        ForumServerData serverData)
     {
-        _logger.LogDebug(
-            "Downloading price list for {ServerName} from {Url}",
-            serverLink.Name,
-            serverLink.Url);
-
-        return await _httpClient.GetStringAsync(serverLink.Url);
-    }
-
-    private Server ParseServerPage(ForumServerLink serverLink, string html)
-    {
-        var document = new HtmlDocument();
-
-        document.LoadHtml(html);
-
-        var contentNode = document.DocumentNode
-            .SelectSingleNode("//div[@data-role='commentContent']");
-
-        var serverName = NormalizeServerName(serverLink.Name);
-
         var server = new Server
         {
-            Name = serverName
+            Name = serverData.Name
         };
 
-        if (contentNode is null)
+        foreach (var itemData in serverData.Items)
         {
-            return server;
-        }
-
-        var currentMod = string.Empty;
-
-        foreach (var childNode in contentNode.ChildNodes)
-        {
-            var mod = TryGetModName(childNode);
-
-            if (mod is not null)
+            server.Items.Add(new Item
             {
-                currentMod = mod;
-                continue;
-            }
-
-            var lines = childNode.InnerText
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            foreach (var line in lines)
-            {
-                var parsedItem = ItemLineParser.TryParse(line);
-                if (parsedItem is not null)
-                {
-                    server.Items.Add(new Item
-                    {
-                        Name = parsedItem.Name,
-                        Count = parsedItem.Count,
-                        Price = parsedItem.Price,
-                        Mod = currentMod
-                    });
-                }
-            }
+                Name = itemData.Name,
+                Mod = itemData.Mod,
+                Count = itemData.Count,
+                Price = itemData.Price,
+                Source = ItemSource.Forum
+            });
         }
 
         return server;
     }
 
-    private static string? TryGetModName(HtmlNode node)
+    private static ServerSyncResult SynchronizeServerItems(
+        Server existingServer,
+        ForumServerData parsedServer)
     {
-        if (!node.Name.Equals("ul", StringComparison.OrdinalIgnoreCase))
+        var existingForumItemsByKey = existingServer.Items
+            .Where(item => item.Source == ItemSource.Forum)
+            .ToDictionary(
+                item => ForumItemKeyFactory.Create(
+                    item.Name,
+                    item.Mod),
+                StringComparer.OrdinalIgnoreCase);
+
+        var addedItemsCount = 0;
+        var updatedItemsCount = 0;
+
+        foreach (var parsedItem in parsedServer.Items)
         {
-            return null;
+            var itemKey = ForumItemKeyFactory.Create(
+                parsedItem.Name,
+                parsedItem.Mod);
+
+            if (!existingForumItemsByKey.TryGetValue(
+                    itemKey,
+                    out var existingItem))
+            {
+                var newItem = new Item
+                {
+                    Name = parsedItem.Name,
+                    Mod = parsedItem.Mod,
+                    Count = parsedItem.Count,
+                    Price = parsedItem.Price,
+                    Source = ItemSource.Forum
+                };
+
+                existingServer.Items.Add(newItem);
+                existingForumItemsByKey.Add(itemKey, newItem);
+
+                addedItemsCount++;
+
+                continue;
+            }
+
+            var itemWasUpdated = false;
+
+            if (existingItem.Name != parsedItem.Name)
+            {
+                existingItem.Name = parsedItem.Name;
+                itemWasUpdated = true;
+            }
+
+            if (existingItem.Mod != parsedItem.Mod)
+            {
+                existingItem.Mod = parsedItem.Mod;
+                itemWasUpdated = true;
+            }
+
+            if (existingItem.Count != parsedItem.Count)
+            {
+                existingItem.Count = parsedItem.Count;
+                itemWasUpdated = true;
+            }
+
+            if (existingItem.Price != parsedItem.Price)
+            {
+                existingItem.Price = parsedItem.Price;
+                itemWasUpdated = true;
+            }
+
+            if (itemWasUpdated)
+            {
+                updatedItemsCount++;
+            }
         }
 
-        var mod = node.InnerText.Trim();
-
-        return string.IsNullOrWhiteSpace(mod)
-            ? null
-            : mod;
+        return new ServerSyncResult(
+            addedItemsCount,
+            updatedItemsCount);
     }
 
-    private static string NormalizeServerName(string forumTitle)
-    {
-        return forumTitle
-            .Replace("Экономика ", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Trim();
-    }
+
+    private readonly record struct ServerSyncResult(
+        int AddedItems,
+        int UpdatedItems);
 }

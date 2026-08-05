@@ -52,6 +52,9 @@ namespace EconomyViewerWeb.Infrastructure.Migrations
                     b.Property<Guid>("ServerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ServerId");
