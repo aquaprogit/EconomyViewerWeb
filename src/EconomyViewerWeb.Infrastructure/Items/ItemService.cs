@@ -8,6 +8,8 @@ using EconomyViewerWeb.Application.Exceptions;
 using EconomyViewerWeb.Application.Parsing;
 using EconomyViewerWeb.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using EconomyViewerWeb.Application.Common.Normalization;
+using EconomyViewerWeb.Domain.Enums;
 
 namespace EconomyViewerWeb.Infrastructure.Items;
 
@@ -48,7 +50,6 @@ public class ItemService : IItemService
         if (selectedMods is { Length: > 0 })
         {
             query = query.Where(item =>
-                item.Mod != null &&
                 selectedMods.Contains(item.Mod));
         }
 
@@ -97,13 +98,22 @@ public class ItemService : IItemService
                 $"Server with id '{serverId}' was not found.");
         }
 
+        var normalizedName = ItemTextNormalizer.NormalizeRequired(
+            request.Name,
+            nameof(request.Name));
+
+        var normalizedMod = ItemTextNormalizer.NormalizeRequired(
+            request.Mod,
+            nameof(request.Mod));
+
         var item = new Item
         {
             ServerId = serverId,
-            Name = request.Name.Trim(),
+            Name = normalizedName,
             Count = request.Count,
             Price = request.Price,
-            Mod = request.Mod.Trim()
+            Mod = normalizedMod,
+            Source = ItemSource.Manual
         };
 
         _dbContext.Items.Add(item);
@@ -128,10 +138,24 @@ public class ItemService : IItemService
                 $"Item with id '{id}' was not found on server '{serverId}'.");
         }
 
-        item.Name = request.Name.Trim();
+        if (item.Source != ItemSource.Manual)
+        {
+            throw new ValidationException(
+                "Only manually created items can be updated.");
+        }
+
+        var normalizedName = ItemTextNormalizer.NormalizeRequired(
+            request.Name,
+            nameof(request.Name));
+
+        var normalizedMod = ItemTextNormalizer.NormalizeRequired(
+            request.Mod,
+            nameof(request.Mod));
+
+        item.Name = normalizedName;
         item.Count = request.Count;
         item.Price = request.Price;
-        item.Mod = request.Mod.Trim();
+        item.Mod = normalizedMod;
 
         await _dbContext.SaveChangesAsync();
 
@@ -149,6 +173,12 @@ public class ItemService : IItemService
         {
             throw new NotFoundException(
                 $"Item with id '{id}' was not found on server '{serverId}'.");
+        }
+
+        if (item.Source != ItemSource.Manual)
+        {
+            throw new ValidationException(
+                "Only manually created items can be deleted.");
         }
 
         _dbContext.Items.Remove(item);
@@ -169,12 +199,13 @@ public class ItemService : IItemService
                 $"Server with id '{serverId}' was not found.");
         }
 
-        var normalizedMod = request.Mod.Trim();
+        var normalizedMod = ItemTextNormalizer.NormalizeRequired(
+            request.Mod,
+            nameof(request.Mod));
 
         var modExists = await _dbContext.Items
             .AnyAsync(item =>
                 item.ServerId == serverId &&
-                item.Mod != null &&
                 EF.Functions.Collate(
                     item.Mod,
                     "Latin1_General_100_CI_AS") == normalizedMod);
@@ -205,13 +236,18 @@ public class ItemService : IItemService
                 continue;
             }
 
+            var normalizedName = ItemTextNormalizer.NormalizeRequired(
+                parsedItem.Name,
+                nameof(parsedItem.Name));
+
             items.Add(new Item
             {
                 ServerId = serverId,
-                Name = parsedItem.Name,
+                Name = normalizedName,
                 Count = parsedItem.Count,
                 Price = parsedItem.Price,
-                Mod = normalizedMod
+                Mod = normalizedMod,
+                Source = ItemSource.Manual
             });
         }
 

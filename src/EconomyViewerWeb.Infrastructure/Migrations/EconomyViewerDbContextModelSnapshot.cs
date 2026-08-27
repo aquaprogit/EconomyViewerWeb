@@ -32,6 +32,7 @@ namespace EconomyViewerWeb.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("Mod")
+                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
@@ -50,6 +51,9 @@ namespace EconomyViewerWeb.Infrastructure.Migrations
 
                     b.Property<Guid>("ServerId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

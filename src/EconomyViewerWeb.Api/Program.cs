@@ -1,12 +1,18 @@
 using EconomyViewerWeb.Api.Filters;
+using EconomyViewerWeb.Api.Jobs;
 using EconomyViewerWeb.Api.Middleware;
 using EconomyViewerWeb.Application;
 using EconomyViewerWeb.Infrastructure;
-using EconomyViewerWeb.Infrastructure.ForumSync;
+using Hangfire;
+using Hangfire.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ValidationFilter>();
+});
+
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
@@ -15,7 +21,45 @@ builder.Services.AddSwaggerGen();
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);
+
+builder.Services.AddScoped<ForumSyncJob>();
+
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' was not found.");
+
+builder.Services.AddHangfire(configuration =>
+{
+    configuration
+        .SetDataCompatibilityLevel(
+            CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSqlServerStorage(
+            connectionString,
+            new SqlServerStorageOptions
+            {
+                PrepareSchemaIfNecessary = true
+            });
+});
+
+builder.Services.AddHangfireServer();
+
 var app = builder.Build();
+
+var recurringJobManager =
+    app.Services.GetRequiredService<IRecurringJobManager>();
+
+recurringJobManager.AddOrUpdate<ForumSyncJob>(
+    recurringJobId: "forum-sync-daily",
+    methodCall: job => job.ExecuteAsync(
+        CancellationToken.None),
+    cronExpression: Cron.Daily(),
+    options: new RecurringJobOptions
+    {
+        TimeZone = TimeZoneInfo.Local
+    });
 
 if (app.Environment.IsDevelopment())
 {
@@ -28,17 +72,10 @@ app.UseMiddleware<ExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
+app.MapControllers();
 
-builder.Services.AddControllers(options =>
-{
-    options.Filters.Add<ValidationFilter>();
-});
 app.MapHealthChecks("/health");
 
-using (var scope = app.Services.CreateScope())
-{
-    var forumSyncService = scope.ServiceProvider.GetRequiredService<IForumSyncService>();
-    await forumSyncService.SeedIfEmptyAsync();
-}
+
 
 app.Run();
